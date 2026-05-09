@@ -1,6 +1,8 @@
-import { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useState, useEffect } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, Edit2, Trash2, Tags, Save, X, AlertCircle } from 'lucide-react';
+import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, query, where } from 'firebase/firestore';
+import { db } from '../firebase';
 
 export const COLORS = [
   { label: 'Cinza', value: 'bg-slate-100 text-slate-700', hex: 'bg-slate-500' },
@@ -25,40 +27,40 @@ export const COLORS = [
 
 export default function Categories() {
   const queryClient = useQueryClient();
+  const [user] = useState(() => {
+    const saved = localStorage.getItem('user');
+    return saved ? JSON.parse(saved) : { id: null };
+  });
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState(null);
   const [formData, setFormData] = useState({ name: '', color: COLORS[0].value });
   const [error, setError] = useState('');
+  const [categories, setCategories] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const { data: categories = [], isLoading } = useQuery({
-    queryKey: ['categories'],
-    queryFn: async () => {
-      const token = localStorage.getItem('token');
-      const res = await fetch('http://localhost:5000/api/categories', { headers: { 'Authorization': `Bearer ${token}` } });
-      if (!res.ok) throw new Error('Falha ao obter categorias');
-      return res.json();
-    }
-  });
+  useEffect(() => {
+    if (!user || !user.id) return;
+
+    const q = query(collection(db, 'categories'), where('user_id', '==', user.id));
+    const unsub = onSnapshot(q, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setCategories(data);
+      queryClient.setQueryData(['categories'], data);
+      setIsLoading(false);
+    });
+    return () => unsub();
+  }, [queryClient, user.id]);
 
   const saveMutation = useMutation({
     mutationFn: async (payload) => {
-      const token = localStorage.getItem('token');
-      const method = editingCategory ? 'PUT' : 'POST';
-      const url = editingCategory ? `http://localhost:5000/api/categories/${editingCategory.id}` : 'http://localhost:5000/api/categories';
-      
-      const res = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify(payload)
-      });
-      
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Erro ao salvar categoria');
-      return data;
+      if (editingCategory) {
+        await updateDoc(doc(db, 'categories', String(editingCategory.id)), payload);
+      } else {
+        await addDoc(collection(db, 'categories'), { ...payload, user_id: user.id });
+      }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['categories'] });
-      queryClient.invalidateQueries({ queryKey: ['tasks'] }); // Names/Colors apply to tasks immediately conceptually 
       closeModal();
     },
     onError: (err) => setError(err.message)
@@ -66,17 +68,9 @@ export default function Categories() {
 
   const deleteMutation = useMutation({
     mutationFn: async (id) => {
-      const token = localStorage.getItem('token');
-      const res = await fetch(`http://localhost:5000/api/categories/${id}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Erro ao deletar categoria');
-      return data;
+      await deleteDoc(doc(db, 'categories', String(id)));
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['categories'] });
       setError('');
     },
     onError: (err) => setError(err.message)

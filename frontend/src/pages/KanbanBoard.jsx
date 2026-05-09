@@ -1,8 +1,10 @@
-import { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useState, useEffect } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, MoreVertical, MessageSquare, Paperclip, Clock, Edit2, Trash2, CheckCircle } from 'lucide-react';
 import TaskModal from '../components/TaskModal';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
+import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, query, where } from 'firebase/firestore';
+import { db } from '../firebase';
 
 const COLUMNS = [
   { id: 'A Fazer', title: 'A Fazer', color: 'bg-zinc-200 dark:bg-zinc-800' },
@@ -12,65 +14,59 @@ const COLUMNS = [
 
 export default function KanbanBoard() {
   const queryClient = useQueryClient();
+  const [user] = useState(() => {
+    const saved = localStorage.getItem('user');
+    return saved ? JSON.parse(saved) : { id: null };
+  });
+  
   const [isTaskModalOpen, setTaskModalOpen] = useState(false);
   const [isDeleteModalOpen, setDeleteModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState(null);
   const [taskToDelete, setTaskToDelete] = useState(null);
-  
-  const { data: tasks = [] } = useQuery({
-    queryKey: ['tasks'],
-    queryFn: async () => {
-      const token = localStorage.getItem('token');
-      const res = await fetch('http://localhost:5000/api/tasks', { headers: { 'Authorization': `Bearer ${token}` }});
-      if (!res.ok) throw new Error('Falha ao obter tarefas');
-      return res.json();
-    }
-  });
+  const [tasks, setTasks] = useState([]);
+  const [categories, setCategories] = useState([]);
 
-  const { data: categories = [] } = useQuery({
-    queryKey: ['categories'],
-    queryFn: async () => {
-      const token = localStorage.getItem('token');
-      const res = await fetch('http://localhost:5000/api/categories', { headers: { 'Authorization': `Bearer ${token}` }});
-      if (!res.ok) throw new Error('Falha ao obter categorias');
-      return res.json();
-    }
-  });
+  useEffect(() => {
+    if (!user || !user.id) return;
+
+    const qTasks = query(collection(db, 'tasks'), where('user_id', '==', user.id));
+    const unsubTasks = onSnapshot(qTasks, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setTasks(data);
+      queryClient.setQueryData(['tasks'], data);
+    });
+    
+    const qCategories = query(collection(db, 'categories'), where('user_id', '==', user.id));
+    const unsubCategories = onSnapshot(qCategories, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setCategories(data);
+      queryClient.setQueryData(['categories'], data);
+    });
+
+    return () => {
+      unsubTasks();
+      unsubCategories();
+    };
+  }, [queryClient, user.id]);
 
   const saveMutation = useMutation({
     mutationFn: async ({ payload, taskId }) => {
-      const token = localStorage.getItem('token');
-      const method = taskId ? 'PUT' : 'POST';
-      const url = taskId ? `http://localhost:5000/api/tasks/${taskId}` : 'http://localhost:5000/api/tasks';
-      const res = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify(payload)
-      });
-      if (!res.ok) throw new Error('Erro ao salvar tarefa');
-      return res.json();
+      if (taskId) {
+        await updateDoc(doc(db, 'tasks', String(taskId)), payload);
+      } else {
+        await addDoc(collection(db, 'tasks'), { ...payload, user_id: user.id });
+      }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['tasks'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboardStats'] });
-      queryClient.invalidateQueries({ queryKey: ['userStats'] });
+      // no need to invalidate, onSnapshot handles updates instantly
     }
   });
 
   const deleteMutation = useMutation({
     mutationFn: async (id) => {
-      const token = localStorage.getItem('token');
-      const res = await fetch(`http://localhost:5000/api/tasks/${id}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (!res.ok) throw new Error('Erro ao deletar tarefa');
-      return res.json();
+      await deleteDoc(doc(db, 'tasks', String(id)));
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['tasks'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboardStats'] });
-      queryClient.invalidateQueries({ queryKey: ['userStats'] });
       setDeleteModalOpen(false);
       setTaskToDelete(null);
     }
@@ -102,8 +98,7 @@ export default function KanbanBoard() {
     const taskIdString = e.dataTransfer.getData('taskId');
     if (!taskIdString) return;
     
-    const taskId = parseInt(taskIdString, 10);
-    const task = tasks.find(t => t.id === taskId);
+    const task = tasks.find(t => String(t.id) === taskIdString);
     
     if (task && task.status !== columnId) {
       // Optimistic cache update is tricky with tags here, so we invalidate aggressively

@@ -1,14 +1,16 @@
-import { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useState, useEffect } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { CheckCircle2, Clock, CalendarDays, TrendingUp, Plus, Calendar, AlertCircle } from 'lucide-react';
 import TaskModal from '../components/TaskModal';
+import { collection, onSnapshot, addDoc, query, where } from 'firebase/firestore';
+import { db } from '../firebase';
 
 export default function Dashboard() {
   const queryClient = useQueryClient();
   const [isTaskModalOpen, setTaskModalOpen] = useState(false);
   const [user] = useState(() => {
     const saved = localStorage.getItem('user');
-    return saved ? JSON.parse(saved) : { name: 'Usuário' };
+    return saved ? JSON.parse(saved) : { name: 'Usuário', id: null };
   });
 
   const getGreeting = () => {
@@ -18,54 +20,57 @@ export default function Dashboard() {
     return 'Boa noite';
   };
 
-  const { data: statsData = { total_tasks: 0, completed_tasks: 0, overdue_tasks: 0, due_today: 0, completed_last_7_days: 0 } } = useQuery({
-    queryKey: ['dashboardStats'],
-    queryFn: async () => {
-      const token = localStorage.getItem('token');
-      const res = await fetch('http://localhost:5000/api/dashboard/stats', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (!res.ok) throw new Error('Falha ao obter stats');
-      return res.json();
-    }
-  });
+  const [tasks, setTasks] = useState([]);
+  const [categories, setCategories] = useState([]);
 
-  const { data: tasks = [] } = useQuery({
-    queryKey: ['tasks'],
-    queryFn: async () => {
-      const token = localStorage.getItem('token');
-      const res = await fetch('http://localhost:5000/api/tasks', { headers: { 'Authorization': `Bearer ${token}` }});
-      if (!res.ok) throw new Error('Falha ao obter tarefas');
-      return res.json();
-    }
-  });
+  useEffect(() => {
+    if (!user || !user.id) return;
 
-  const { data: categories = [] } = useQuery({
-    queryKey: ['categories'],
-    queryFn: async () => {
-      const token = localStorage.getItem('token');
-      const res = await fetch('http://localhost:5000/api/categories', { headers: { 'Authorization': `Bearer ${token}` }});
-      if (!res.ok) throw new Error('Falha ao obter categorias');
-      return res.json();
-    }
-  });
+    const qTasks = query(collection(db, 'tasks'), where('user_id', '==', user.id));
+    const unsubTasks = onSnapshot(qTasks, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setTasks(data);
+      queryClient.setQueryData(['tasks'], data);
+    });
+    
+    const qCategories = query(collection(db, 'categories'), where('user_id', '==', user.id));
+    const unsubCategories = onSnapshot(qCategories, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setCategories(data);
+      queryClient.setQueryData(['categories'], data);
+    });
+
+    return () => {
+      unsubTasks();
+      unsubCategories();
+    };
+  }, [queryClient, user.id]);
+
+  // Derived stats from real-time tasks
+  const statsData = {
+    total_tasks: tasks.length,
+    completed_tasks: tasks.filter(t => t.status === 'Concluído').length,
+    overdue_tasks: tasks.filter(t => {
+      if (!t.due_date || t.status === 'Concluído') return false;
+      const [year, month, day] = t.due_date.split('-');
+      const dueDate = new Date(year, month - 1, day);
+      dueDate.setHours(23, 59, 59, 999);
+      return dueDate < new Date();
+    }).length,
+    due_today: tasks.filter(t => {
+      if (!t.due_date || t.status === 'Concluído') return false;
+      const today = new Date();
+      const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+      return t.due_date === todayStr;
+    }).length,
+    completed_last_7_days: tasks.filter(t => t.status === 'Concluído').length, // Simplified for frontend-only
+  };
 
   const saveMutation = useMutation({
     mutationFn: async ({ payload }) => {
-      const token = localStorage.getItem('token');
-      const url = 'http://localhost:5000/api/tasks';
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify(payload)
-      });
-      if (!res.ok) throw new Error('Erro ao salvar tarefa');
-      return res.json();
+      await addDoc(collection(db, 'tasks'), { ...payload, user_id: user.id });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['tasks'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboardStats'] });
-      queryClient.invalidateQueries({ queryKey: ['userStats'] });
       setTaskModalOpen(false);
     }
   });
