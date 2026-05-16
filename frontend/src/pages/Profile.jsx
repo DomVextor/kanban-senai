@@ -14,7 +14,7 @@ export default function Profile() {
     queryKey: ['userStats'],
     queryFn: async () => {
       const token = localStorage.getItem('token');
-      const res = await fetch('http://localhost:5000/api/users/me', {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/users/me`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (res.ok) {
@@ -45,7 +45,7 @@ export default function Profile() {
       const formData = new FormData();
       formData.append('avatar', file);
       
-      const res = await fetch('http://localhost:5000/api/users/avatar', {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/users/avatar`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` },
         body: formData
@@ -92,7 +92,7 @@ export default function Profile() {
             <div className="relative mt-8 mb-4">
               <div className="w-28 h-28 mx-auto rounded-full ring-4 ring-white dark:ring-zinc-900 bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center overflow-hidden shadow-md">
                 {user?.avatar ? (
-                  <img src={`http://localhost:5000${user.avatar}`} alt="Avatar" className="w-full h-full object-cover" />
+                  <img src={`${import.meta.env.VITE_API_URL}${user.avatar}`} alt="Avatar" className="w-full h-full object-cover" />
                 ) : (
                   <span className="text-3xl font-bold text-zinc-400 dark:text-zinc-500">{getInitials(user?.name || '')}</span>
                 )}
