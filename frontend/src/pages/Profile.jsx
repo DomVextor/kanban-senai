@@ -6,7 +6,6 @@ import { updateProfile } from 'firebase/auth';
 import { db, auth } from '../firebase';
 
 export default function Profile() {
-  const fileInputRef = useRef(null);
   
   const [user, setUser] = useState(() => {
     const saved = localStorage.getItem('user');
