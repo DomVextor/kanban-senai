@@ -61,7 +61,7 @@ export default function MainLayout() {
           <Link to="/profile" className="flex items-center gap-3 p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl transition-all mb-2 cursor-pointer group">
             <div className="h-10 w-10 shrink-0 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center text-white font-medium shadow-sm group-hover:ring-2 ring-indigo-500 ring-offset-2 dark:ring-offset-zinc-900 transition-all overflow-hidden">
               {user?.avatar ? (
-                <img src={`${import.meta.env.VITE_API_URL}${user.avatar}`} alt="Avatar" className="w-full h-full object-cover" />
+                <img src={user.avatar} alt="Avatar" className="w-full h-full object-cover" />
               ) : (
                 <span>{getInitials(user?.name)}</span>
               )}

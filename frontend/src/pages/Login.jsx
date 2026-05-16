@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { LogIn, UserPlus, AlertCircle, Eye, EyeOff } from 'lucide-react';
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
+import { auth } from '../firebase';
 
 export default function Login() {
   const [isLogin, setIsLogin] = useState(true);
@@ -19,33 +21,58 @@ export default function Login() {
     setError('');
     setLoading(true);
 
-    const endpoint = isLogin ? '/api/auth/login' : '/api/auth/register';
-
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL}${endpoint}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(isLogin
-          ? { email: formData.email, password: formData.password }
-          : formData
-        )
-      });
+      let userCredential;
+      let userData;
 
-      const data = await response.json();
+      if (isLogin) {
+        // LogIn com Firebase
+        userCredential = await signInWithEmailAndPassword(auth, formData.email, formData.password);
+        
+        userData = {
+          uid: userCredential.user.uid,
+          name: userCredential.user.displayName || formData.email.split('@')[0],
+          email: userCredential.user.email,
+          avatar: userCredential.user.photoURL
+        };
+      } else {
+        // Cadastro com Firebase
+        userCredential = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
+        
+        // Gerar avatar aleatório e diversificado
+        const diverseSeeds = ['Aidan', 'Destiny', 'Jocelyn', 'Avery', 'Liam', 'Mason', 'Sofia', 'Valentina', 'Chloe', 'Elijah'];
+        const randomSeed = diverseSeeds[Math.floor(Math.random() * diverseSeeds.length)];
+        const avatarUrl = `https://api.dicebear.com/7.x/avataaars/svg?seed=${randomSeed}&backgroundColor=b6e3f4,c0aede,d1d4f9`;
 
-      if (!response.ok) {
-        throw new Error(data.error || 'Ocorreu um erro');
+        await updateProfile(userCredential.user, {
+          displayName: formData.name,
+          photoURL: avatarUrl
+        });
+
+        userData = {
+          uid: userCredential.user.uid,
+          name: formData.name,
+          email: formData.email,
+          avatar: avatarUrl
+        };
       }
 
       // Store tokens and redirect
-      localStorage.setItem('token', data.token);
-      localStorage.setItem('user', JSON.stringify(data.user));
+      localStorage.setItem('token', await userCredential.user.getIdToken());
+      localStorage.setItem('user', JSON.stringify(userData));
       navigate('/');
-
+      
     } catch (err) {
-      setError(err.message);
+      console.error(err);
+      if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
+        setError('Email ou senha inválidos.');
+      } else if (err.code === 'auth/email-already-in-use') {
+        setError('Este email já está cadastrado.');
+      } else if (err.code === 'auth/weak-password') {
+        setError('A senha deve ter pelo menos 6 caracteres.');
+      } else {
+        setError('Ocorreu um erro ao autenticar. Tente novamente.');
+      }
     } finally {
       setLoading(false);
     }

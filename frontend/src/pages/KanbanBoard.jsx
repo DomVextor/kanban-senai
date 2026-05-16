@@ -16,8 +16,10 @@ export default function KanbanBoard() {
   const queryClient = useQueryClient();
   const [user] = useState(() => {
     const saved = localStorage.getItem('user');
-    return saved ? JSON.parse(saved) : { id: null };
+    return saved ? JSON.parse(saved) : { uid: null };
   });
+  
+  const userId = user?.uid || user?.id;
   
   const [isTaskModalOpen, setTaskModalOpen] = useState(false);
   const [isDeleteModalOpen, setDeleteModalOpen] = useState(false);
@@ -27,16 +29,16 @@ export default function KanbanBoard() {
   const [categories, setCategories] = useState([]);
 
   useEffect(() => {
-    if (!user || !user.id) return;
+    if (!userId) return;
 
-    const qTasks = query(collection(db, 'tasks'), where('user_id', '==', user.id));
+    const qTasks = query(collection(db, 'tasks'), where('user_id', '==', userId));
     const unsubTasks = onSnapshot(qTasks, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setTasks(data);
       queryClient.setQueryData(['tasks'], data);
     });
     
-    const qCategories = query(collection(db, 'categories'), where('user_id', '==', user.id));
+    const qCategories = query(collection(db, 'categories'), where('user_id', '==', userId));
     const unsubCategories = onSnapshot(qCategories, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setCategories(data);
@@ -47,14 +49,14 @@ export default function KanbanBoard() {
       unsubTasks();
       unsubCategories();
     };
-  }, [queryClient, user.id]);
+  }, [queryClient, userId]);
 
   const saveMutation = useMutation({
     mutationFn: async ({ payload, taskId }) => {
       if (taskId) {
         await updateDoc(doc(db, 'tasks', String(taskId)), payload);
       } else {
-        await addDoc(collection(db, 'tasks'), { ...payload, user_id: user.id });
+        await addDoc(collection(db, 'tasks'), { ...payload, user_id: userId });
       }
     },
     onSuccess: () => {

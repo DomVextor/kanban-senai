@@ -10,8 +10,10 @@ export default function Dashboard() {
   const [isTaskModalOpen, setTaskModalOpen] = useState(false);
   const [user] = useState(() => {
     const saved = localStorage.getItem('user');
-    return saved ? JSON.parse(saved) : { name: 'Usuário', id: null };
+    return saved ? JSON.parse(saved) : { name: 'Usuário', uid: null };
   });
+
+  const userId = user?.uid || user?.id;
 
   const getGreeting = () => {
     const hour = new Date().getHours();
@@ -24,16 +26,16 @@ export default function Dashboard() {
   const [categories, setCategories] = useState([]);
 
   useEffect(() => {
-    if (!user || !user.id) return;
+    if (!userId) return;
 
-    const qTasks = query(collection(db, 'tasks'), where('user_id', '==', user.id));
+    const qTasks = query(collection(db, 'tasks'), where('user_id', '==', userId));
     const unsubTasks = onSnapshot(qTasks, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setTasks(data);
       queryClient.setQueryData(['tasks'], data);
     });
     
-    const qCategories = query(collection(db, 'categories'), where('user_id', '==', user.id));
+    const qCategories = query(collection(db, 'categories'), where('user_id', '==', userId));
     const unsubCategories = onSnapshot(qCategories, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setCategories(data);
@@ -44,7 +46,7 @@ export default function Dashboard() {
       unsubTasks();
       unsubCategories();
     };
-  }, [queryClient, user.id]);
+  }, [queryClient, userId]);
 
   // Derived stats from real-time tasks
   const statsData = {
@@ -68,7 +70,7 @@ export default function Dashboard() {
 
   const saveMutation = useMutation({
     mutationFn: async ({ payload }) => {
-      await addDoc(collection(db, 'tasks'), { ...payload, user_id: user.id });
+      await addDoc(collection(db, 'tasks'), { ...payload, user_id: userId });
     },
     onSuccess: () => {
       setTaskModalOpen(false);
